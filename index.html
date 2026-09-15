@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e2e">
+<title>העלאת שיעור</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+    background: #1e1e2e; color: #eee;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    max-width: 560px; margin-inline: auto; font-size: 16px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9aa0b5; font-size: 13px; margin: 0 0 20px; }
+  label { display: block; font-size: 14px; color: #c8cce0; margin: 14px 0 6px; }
+  input, select, button {
+    width: 100%; padding: 14px; font-size: 16px; font-family: inherit;
+    border-radius: 10px; border: 1px solid #3a3a4d; background: #262639; color: #eee;
+  }
+  button {
+    background: #5865f2; border: none; color: #fff; font-weight: 700;
+    cursor: pointer; margin-top: 18px; padding: 16px;
+  }
+  button.secondary { background: #3a3a4d; }
+  button:disabled { opacity: .5; }
+  .card { background: #262639; border: 1px solid #3a3a4d; border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .file-pick { display: block; text-align: center; padding: 26px 14px; border: 2px dashed #4a4a63; border-radius: 12px; color: #9aa0b5; cursor: pointer; }
+  .file-pick.chosen { border-style: solid; border-color: #5865f2; color: #eee; }
+  .file-pick b { display: block; font-size: 15px; color: #eee; word-break: break-all; }
+  .file-pick span { font-size: 13px; }
+  #file { display: none; }
+  #bar-wrap { height: 8px; background: #3a3a4d; border-radius: 99px; overflow: hidden; margin-top: 14px; display: none; }
+  #bar { height: 100%; width: 0; background: #5865f2; transition: width .2s; }
+  #status { font-size: 14px; min-height: 22px; margin-top: 12px; word-break: break-word; }
+  .warn { background: #4a3a12; border: 1px solid #f9c74f; color: #f9d77f; font-size: 13px; border-radius: 10px; padding: 12px; margin-top: 18px; }
+  a { color: #8fa0ff; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<h1>🎬 העלאת שיעור ליוטיוב</h1>
+<p class="sub">בוחרים את ההקלטה מהגלריה, והכל כבר מוגדר מראש.</p>
+
+<div id="signin-card" class="card">
+  <p style="margin:0 0 4px">כדי להעלות צריך להתחבר לחשבון Google.</p>
+  <button id="btn-signin">🔐 התחבר</button>
+</div>
+
+<div id="main" class="hidden">
+  <label for="file">קובץ הווידאו</label>
+  <label class="file-pick" id="file-label" for="file">
+    <b id="file-name">לחץ לבחירת קובץ</b>
+    <span id="file-size">מהגלריה או מתיקיית ההקלטות</span>
+  </label>
+  <input type="file" id="file" accept="video/*">
+
+  <label for="title">כותרת</label>
+  <input type="text" id="title" placeholder="שם השיעור">
+
+  <label for="privacy">פרטיות</label>
+  <select id="privacy">
+    <option value="private">פרטי</option>
+    <option value="unlisted">לא רשום</option>
+    <option value="public">ציבורי</option>
+  </select>
+
+  <label for="playlist">רשימת השמעה</label>
+  <select id="playlist"><option value="">ללא רשימת השמעה</option></select>
+
+  <button id="btn-upload">⬆️ העלה</button>
+  <div id="bar-wrap"><div id="bar"></div></div>
+  <div id="status"></div>
+
+  <div class="warn">
+    סרטונים שמועלים מהדף הזה <b>ננעלים כפרטיים</b> ע"י יוטיוב, כי הם
+    עוברים דרך פרויקט API שלא עבר ביקורת. אי אפשר לשנות זאת בדיעבד.
+    אם השיעור צריך להיות צפוי לאחרים — העלה אותו דרך <b>אפליקציית
+    יוטיוב</b> (גלריה ← שיתוף ← YouTube), שם אין המגבלה הזו.
+  </div>
+
+  <button id="btn-signout" class="secondary">התנתק</button>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+const CLIENT_ID = '271965771796-0slc3fm51geejb1kvq5panonq6j5lrcn.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl';
+
+let accessToken = null;
+let tokenClient = null;
+let chosenFile = null;
+
+const $ = (id) => document.getElementById(id);
+
+function setStatus(msg, color) {
+  $('status').style.color = color || '#c8cce0';
+  $('status').textContent = msg;
+}
+
+function twoDigit(n) { return String(n).padStart(2, '0'); }
+
+function defaultTitle() {
+  const now = new Date();
+  return `שיעור ${twoDigit(now.getDate())}.${twoDigit(now.getMonth() + 1)}.${now.getFullYear()} ` +
+         `${twoDigit(now.getHours())}:${twoDigit(now.getMinutes())}`;
+}
+
+function humanSize(bytes) {
+  const mb = bytes / 1024 / 1024;
+  return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB';
+}
+
+// ---- התחברות ----
+
+function showSignedIn(signedIn) {
+  $('signin-card').classList.toggle('hidden', signedIn);
+  $('main').classList.toggle('hidden', !signedIn);
+}
+
+function initTokenClient() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp) => {
+      if (resp.error) {
+        setStatus('ההתחברות נכשלה: ' + resp.error, '#ff6b6b');
+        return;
+      }
+      accessToken = resp.access_token;
+      sessionStorage.setItem('yt_token', accessToken);
+      showSignedIn(true);
+      loadPlaylists();
+    }
+  });
+}
+
+$('btn-signin').addEventListener('click', () => {
+  if (!tokenClient) {
+    if (!window.google || !google.accounts) {
+      setStatus('ספריית Google עדיין נטענת, נסה שוב בעוד רגע.', '#f9c74f');
+      return;
+    }
+    initTokenClient();
+  }
+  tokenClient.requestAccessToken();
+});
+
+$('btn-signout').addEventListener('click', () => {
+  accessToken = null;
+  sessionStorage.removeItem('yt_token');
+  showSignedIn(false);
+});
+
+// ---- בחירת קובץ ----
+
+$('file').addEventListener('change', (e) => {
+  chosenFile = e.target.files[0] || null;
+  if (!chosenFile) return;
+  $('file-label').classList.add('chosen');
+  $('file-name').textContent = chosenFile.name;
+  $('file-size').textContent = humanSize(chosenFile.size);
+  if (!$('title').value.trim()) $('title').value = defaultTitle();
+});
+
+// ---- רשימות השמעה ----
+
+async function loadPlaylists() {
+  try {
+    const res = await fetch(
+      'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50',
+      { headers: { Authorization: 'Bearer ' + accessToken } }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const select = $('playlist');
+    for (const item of (data.items || [])) {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.snippet.title;
+      select.appendChild(opt);
+    }
+    const saved = localStorage.getItem('yt_playlist');
+    if (saved) select.value = saved;
+  } catch (err) {
+    console.warn('טעינת רשימות ההשמעה נכשלה', err);
+  }
+}
+
+$('playlist').addEventListener('change', (e) => {
+  localStorage.setItem('yt_playlist', e.target.value);
+});
+
+// ---- העלאה ----
+
+async function startResumableSession(metadata, file) {
+  const res = await fetch(
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': file.type || 'video/mp4',
+        'X-Upload-Content-Length': String(file.size)
+      },
+      body: JSON.stringify(metadata)
+    }
+  );
+  if (!res.ok) throw new Error('אתחול ההעלאה נכשל: ' + res.status + ' ' + await res.text());
+  const url = res.headers.get('Location');
+  if (!url) throw new Error('לא התקבלה כתובת העלאה מיוטיוב');
+  return url;
+}
+
+// XHR ולא fetch - רק הוא מדווח על התקדמות ההעלאה, וזה קריטי ברשת סלולרית
+function putWithProgress(url, file) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      $('bar').style.width = pct + '%';
+      setStatus(`מעלה... ${pct}% (${humanSize(e.loaded)} מתוך ${humanSize(e.total)})`, '#f9c74f');
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch (err) { reject(new Error('תשובה לא צפויה מיוטיוב')); }
+      } else {
+        reject(new Error('ההעלאה נכשלה: ' + xhr.status + ' ' + xhr.responseText));
+      }
+    };
+    xhr.onerror = () => reject(new Error('שגיאת רשת בזמן ההעלאה'));
+    xhr.send(file);
+  });
+}
+
+async function addToPlaylist(videoId, playlistId) {
+  const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } }
+    })
+  });
+  if (!res.ok) throw new Error(res.status + ' ' + await res.text());
+}
+
+$('btn-upload').addEventListener('click', async () => {
+  if (!chosenFile) { setStatus('לא נבחר קובץ.', '#ff6b6b'); return; }
+
+  const title = $('title').value.trim() || defaultTitle();
+  const privacyStatus = $('privacy').value;
+  const playlistId = $('playlist').value;
+  const playlistName = $('playlist').options[$('playlist').selectedIndex].textContent;
+
+  $('btn-upload').disabled = true;
+  $('bar-wrap').style.display = 'block';
+  $('bar').style.width = '0%';
+  setStatus('מתחיל...', '#f9c74f');
+
+  try {
+    const url = await startResumableSession(
+      { snippet: { title }, status: { privacyStatus } },
+      chosenFile
+    );
+    const result = await putWithProgress(url, chosenFile);
+
+    // מציגים את מה שיוטיוב באמת שמרה, לא את מה שביקשנו
+    const actual = result.status ? result.status.privacyStatus : privacyStatus;
+    let msg = `✅ הועלה (${actual}): https://youtu.be/${result.id}`;
+
+    if (playlistId) {
+      try {
+        await addToPlaylist(result.id, playlistId);
+        msg += ` · נוסף ל"${playlistName}"`;
+      } catch (err) {
+        msg += ` · ההוספה ל"${playlistName}" נכשלה: ${err.message}`;
+      }
+    }
+    setStatus(msg, '#90ee90');
+  } catch (err) {
+    setStatus('❌ ' + err.message, '#ff6b6b');
+  } finally {
+    $('btn-upload').disabled = false;
+  }
+});
+
+// טוקן מהסשן הנוכחי, כדי שרענון לא ידרוש התחברות מחדש
+const cached = sessionStorage.getItem('yt_token');
+if (cached) {
+  accessToken = cached;
+  showSignedIn(true);
+  loadPlaylists();
+}
+</script>
+</body>
+</html>
