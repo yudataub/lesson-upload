@@ -65,8 +65,8 @@
 
   <label for="privacy">פרטיות</label>
   <select id="privacy">
-    <option value="private">פרטי</option>
     <option value="unlisted">לא רשום</option>
+    <option value="private">פרטי</option>
     <option value="public">ציבורי</option>
   </select>
 
@@ -76,13 +76,6 @@
   <button id="btn-upload">⬆️ העלה</button>
   <div id="bar-wrap"><div id="bar"></div></div>
   <div id="status"></div>
-
-  <div class="warn">
-    סרטונים שמועלים מהדף הזה <b>ננעלים כפרטיים</b> ע"י יוטיוב, כי הם
-    עוברים דרך פרויקט API שלא עבר ביקורת. אי אפשר לשנות זאת בדיעבד.
-    אם השיעור צריך להיות צפוי לאחרים — העלה אותו דרך <b>אפליקציית
-    יוטיוב</b> (גלריה ← שיתוף ← YouTube), שם אין המגבלה הזו.
-  </div>
 
   <button id="btn-signout" class="secondary">התנתק</button>
 </div>
@@ -195,6 +188,13 @@ async function loadPlaylists() {
 $('playlist').addEventListener('change', (e) => {
   localStorage.setItem('yt_playlist', e.target.value);
 });
+
+$('privacy').addEventListener('change', (e) => {
+  localStorage.setItem('yt_privacy', e.target.value);
+});
+
+const savedPrivacy = localStorage.getItem('yt_privacy');
+if (savedPrivacy) $('privacy').value = savedPrivacy;
 
 // ---- העלאה ----
 
